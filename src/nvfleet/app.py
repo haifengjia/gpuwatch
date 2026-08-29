@@ -1,5 +1,5 @@
 """
-GPU Watch — Textual TUI application.
+NV Fleet — Textual TUI application.
 
 Interactive multi-server GPU monitoring with real-time NVML polling.
 """
@@ -20,11 +20,11 @@ from .ui.dashboard import Dashboard
 from .ui.server_selector import ServerItem, ServerSelector
 
 
-class GPUWatchApp(App):
-    """Main Textual app for GPU Watch."""
+class NVFleetApp(App):
+    """Main Textual app for NV Fleet."""
 
-    TITLE = "GPU Watch"
-    SUB_TITLE = "Multi-server GPU monitor"
+    TITLE = "NV Fleet"
+    SUB_TITLE = "GPU fleet monitor"
 
     CSS = """
     #main-container {
@@ -51,7 +51,7 @@ class GPUWatchApp(App):
     BINDINGS = [
         Binding("q", "quit", "Quit", show=True),
         Binding("r", "refresh_all", "Refresh", show=True),
-        Binding("c", "toggle_compact", "Compact", show=True),
+        Binding("escape", "clear_selection", "Clear", show=True),
     ]
 
     def __init__(self, refresh: float = 1.5, timeout: float = 5.0) -> None:
@@ -62,7 +62,6 @@ class GPUWatchApp(App):
         self._collector: Collector | None = None
         self._selector: ServerSelector | None = None
         self._dashboard: Dashboard | None = None
-        self._compact_mode: bool = False
 
     def compose(self) -> ComposeResult:
         self._servers = discover_servers()
@@ -87,6 +86,12 @@ class GPUWatchApp(App):
 
         # Auto-start servers that were enabled in config
         for server in self._servers:
+            if self._selector is not None:
+                self._selector.update_ssh(
+                    server.host,
+                    server.hostname or server.host,
+                    server.ssh_user or "?",
+                )
             if server.enabled:
                 if self._dashboard:
                     self._dashboard.ensure_panel(server.host, server.label)
@@ -164,13 +169,11 @@ class GPUWatchApp(App):
 
         asyncio.create_task(_restart())
 
-    def action_toggle_compact(self) -> None:
-        """Toggle compact display mode."""
-        self._compact_mode = not self._compact_mode
+    def action_clear_selection(self) -> None:
+        """ESC: clear per-GPU selections & collapse expansions everywhere."""
         if self._dashboard:
-            self._dashboard.compact = self._compact_mode
-        mode = "on" if self._compact_mode else "off"
-        self.notify(f"Compact mode {mode}", timeout=1)
+            for panel in self._dashboard._panels.values():
+                panel.clear_selection()
 
     async def action_quit(self) -> None:
         """Clean shutdown: stop all collectors before exiting."""
@@ -180,6 +183,6 @@ class GPUWatchApp(App):
 
 
 def main() -> None:
-    """Entry point for `gpuwatch` command."""
-    app = GPUWatchApp(refresh=1.5, timeout=5.0)
+    """Entry point for `nvfleet` command."""
+    app = NVFleetApp(refresh=1.5, timeout=5.0)
     app.run()

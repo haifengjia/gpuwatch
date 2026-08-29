@@ -28,19 +28,7 @@ class Dashboard(VerticalScroll, can_focus=False):
     def __init__(self) -> None:
         super().__init__()
         self._panels: dict[str, ServerPanel] = {}
-        self._compact: bool = False
         self._name_width: int = 10
-
-    @property
-    def compact(self) -> bool:
-        return self._compact
-
-    @compact.setter
-    def compact(self, value: bool) -> None:
-        self._compact = value
-        for panel in self._panels.values():
-            panel.compact = value
-            panel.refresh(layout=True)
 
     def _compute_name_width(self) -> int:
         """Find the longest GPU name across all active panels."""
@@ -58,15 +46,12 @@ class Dashboard(VerticalScroll, can_focus=False):
         if w != self._name_width:
             self._name_width = w
             for panel in self._panels.values():
-                panel.name_width = w
-                panel.refresh(layout=True)
+                panel.update_name_width(w)
 
     def ensure_panel(self, host: str, label: str) -> ServerPanel:
         """Get or create a panel widget for a server."""
         if host not in self._panels:
             panel = ServerPanel(host, label)
-            panel.compact = self._compact
-            panel.name_width = self._name_width
             self._panels[host] = panel
             self.mount(panel)
             self.refresh(layout=True)

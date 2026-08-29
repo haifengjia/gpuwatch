@@ -1,4 +1,4 @@
-"""Allow running as `python -m gpuwatch`."""
+"""Allow running as `python -m nvfleet`."""
 
 from .app import main
 

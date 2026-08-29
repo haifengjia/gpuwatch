@@ -1,5 +1,5 @@
 [project]
-name = "gpuwatch"
+name = "nvfleet"
 version = "0.1.0"
 description = "Interactive multi-server GPU monitoring TUI"
 requires-python = ">=3.10"
@@ -9,11 +9,11 @@ dependencies = [
 ]
 
 [project.scripts]
-gpuwatch = "gpuwatch.app:main"
+nvfleet = "nvfleet.app:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["gpuwatch"]
+packages = ["src/nvfleet"]

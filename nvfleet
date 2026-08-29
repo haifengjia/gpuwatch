@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# NV Fleet launcher — starts nvfleet in its dedicated conda environment.
+set -e
+
+command -v conda >/dev/null 2>&1 || {
+    echo "error: conda not found in PATH" >&2
+    exit 1
+}
+
+CONDA_SH="$(conda info --base)/etc/profile.d/conda.sh"
+if [ ! -f "$CONDA_SH" ]; then
+    echo "error: cannot find conda.sh at $CONDA_SH" >&2
+    exit 1
+fi
+
+source "$CONDA_SH"
+conda activate nvfleet
+exec nvfleet "$@"

@@ -7,6 +7,7 @@ Space key toggles monitoring on/off.
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -35,6 +36,8 @@ class ServerItem(Static, can_focus=True):
         self.server_label = label
         self._enabled = enabled
         self._status: str = ""
+        self._ip: str = ""
+        self._user: str = ""
 
     @property
     def enabled(self) -> bool:
@@ -43,6 +46,12 @@ class ServerItem(Static, can_focus=True):
     def set_status(self, status: str) -> None:
         """Show a small status indicator after the label."""
         self._status = status
+        self.refresh()
+
+    def set_ssh(self, ip: str, user: str) -> None:
+        """SSH connection info: IP and user, one line each."""
+        self._ip = ip
+        self._user = user
         self.refresh()
 
     def toggle(self) -> None:
@@ -55,7 +64,13 @@ class ServerItem(Static, can_focus=True):
         check = "[bold green]◉[/]" if self._enabled else "[dim]○[/]"
         has_focus = "[cyan]▸[/]" if self.has_focus else " "
         status = f" {self._status}" if self._status else ""
-        return f"{has_focus} {check} {self.server_label}{status}"
+        head = f"{has_focus} {check} {self.server_label}{status}"
+        summary = ""
+        if self._ip:
+            summary += f"\n    [dim]{self._ip}[/]"
+        if self._user:
+            summary += f"\n    [dim]{self._user}[/]"
+        return head + summary
 
     def on_key(self, event: events.Key) -> None:
         """Space toggles the checkbox."""
@@ -74,14 +89,14 @@ class ServerSelector(Vertical):
 
     DEFAULT_CSS = """
     ServerSelector {
-        width: 28;
+        width: 50;
         height: 1fr;
         border: solid $primary-background;
         padding: 1 0;
     }
 
     ServerItem {
-        height: 1;
+        height: 3;
         padding: 0 1;
     }
     ServerItem:focus {
@@ -111,6 +126,12 @@ class ServerSelector(Vertical):
         item = self._items.get(host)
         if item is not None:
             item.set_status(status)
+
+    def update_ssh(self, host: str, ip: str, user: str) -> None:
+        """Update the SSH connection info lines of a server item."""
+        item = self._items.get(host)
+        if item is not None:
+            item.set_ssh(ip, user)
 
     def on_key(self, event: events.Key) -> None:
         """Arrow keys navigate between server items."""

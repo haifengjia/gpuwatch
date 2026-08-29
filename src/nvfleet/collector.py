@@ -68,7 +68,10 @@ class Collector:
         self._notify(host, self._snapshots[host])  # type: ignore[arg-type]
 
         self._tasks[host] = asyncio.create_task(
-            self._poll_loop(host, config.label, config.ssh_user)
+            self._poll_loop(
+                host, config.label, config.ssh_user, config.transport,
+                config.hostname,
+            )
         )
 
     async def stop(self, host: str) -> None:
@@ -88,17 +91,31 @@ class Collector:
             return_exceptions=True,
         )
 
-    async def _poll_loop(self, host: str, label: str, ssh_user: str | None) -> None:
+    async def _poll_loop(
+        self,
+        host: str,
+        label: str,
+        ssh_user: str | None,
+        transport: str,
+        hostname: str | None = None,
+    ) -> None:
         """Single-server polling loop."""
         consecutive_failures = 0
 
         while True:
             try:
                 offsets = self._reserved_offsets.get(host) or None
-                json_str, latency_ms = await ssh_executor.run_probe(
-                    host, timeout=self._timeout, own_user=ssh_user,
-                    reserved_offsets=offsets,
-                )
+                if transport == "local":
+                    json_str, latency_ms = await ssh_executor.run_probe_local(
+                        timeout=self._timeout,
+                        own_user=ssh_user,
+                        reserved_offsets=offsets,
+                    )
+                else:
+                    json_str, latency_ms = await ssh_executor.run_probe(
+                        host, timeout=self._timeout, own_user=ssh_user,
+                        reserved_offsets=offsets,
+                    )
                 data = json.loads(json_str)
 
                 if data.get("ok"):
@@ -106,7 +123,9 @@ class Collector:
                     offsets = data.get("reserved_offsets")
                     if offsets:
                         self._reserved_offsets[host] = offsets
-                    snapshot = ServerSnapshot.from_probe(host, label, data, latency_ms)
+                    snapshot = ServerSnapshot.from_probe(
+                        host, label, data, latency_ms, own_user=ssh_user
+                    )
                     consecutive_failures = 0
                 else:
                     snapshot = ServerSnapshot.error_snapshot(

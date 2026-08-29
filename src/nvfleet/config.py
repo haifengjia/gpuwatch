@@ -89,7 +89,7 @@ def parse_ssh_config(path: str | None = None) -> list[dict[str, str]]:
 def load_yaml_config(path: str | None = None) -> dict[str, Any] | None:
     """Load optional YAML config. Returns None if not found."""
     if path is None:
-        path = os.path.expanduser("~/.config/gpuwatch/servers.yml")
+        path = os.path.expanduser("~/.config/nvfleet/servers.yml")
 
     try:
         import yaml
@@ -106,49 +106,84 @@ def load_yaml_config(path: str | None = None) -> dict[str, Any] | None:
         return None
 
 
+def _local_config() -> ServerConfig:
+    """The machine nvfleet runs on."""
+    return ServerConfig(
+        host="local",
+        label="local",
+        enabled=True,
+        ssh_user=getpass.getuser(),
+        transport="local",
+        hostname="127.0.0.1",
+    )
+
+
 def discover_servers(yaml_path: str | None = None) -> list[ServerConfig]:
     """Discover GPU servers from SSH config, optionally overlaid with YAML.
 
     Strategy:
-    1. Parse ~/.ssh/config and find all hosts matching GPU keywords.
-    2. If a YAML config exists, use its server list (with labels) and
+    1. Always offer the local machine (transport=local, no SSH needed).
+    2. Parse ~/.ssh/config and list host aliases.
+    3. If a YAML config exists, use its server list (with labels) and
        cross-reference against SSH config hosts.
-    3. If no YAML config, auto-discover from SSH config with generated labels.
+
+    YAML example:
+        local: true          # include the local machine (default: included
+                             # when no YAML config exists)
+        servers:
+          - host: two4090
+            label: "2x 4090"
+            enabled: true
+          - host: local       # explicit local entry; transport auto-set
     """
     ssh_hosts = parse_ssh_config()
     ssh_map: dict[str, dict[str, str]] = {h["host"]: h for h in ssh_hosts}
 
     yaml = load_yaml_config(yaml_path)
+    yaml_local = bool((yaml or {}).get("local", False))
+    yaml_servers = (yaml or {}).get("servers")
 
-    if yaml and "servers" in yaml:
+    if yaml_servers is not None:
         # Use YAML-defined server list, enriching from SSH config
         result: list[ServerConfig] = []
-        for entry in yaml["servers"]:
+        for entry in yaml_servers:
             host = entry["host"]
+            if host == "local" or entry.get("transport") == "local":
+                result.append(
+                    ServerConfig(
+                        host=host,
+                        label=entry.get("label", host),
+                        enabled=entry.get("enabled", False),
+                        ssh_user=getpass.getuser(),
+                        transport="local",
+                    )
+                )
+                continue
             ssh_info = ssh_map.get(host, {})
-            label = entry.get("label", host)
             result.append(
                 ServerConfig(
                     host=host,
-                    label=label,
+                    label=entry.get("label", host),
                     enabled=entry.get("enabled", False),
                     ssh_user=ssh_info.get("user") or getpass.getuser(),
+                    transport=entry.get("transport", "ssh"),
+                    hostname=ssh_info.get("hostname") or entry.get("hostname"),
                 )
             )
+        if yaml_local:
+            result.insert(0, _local_config())
         return result
 
-    # Show all non-wildcard hosts, skipping known code-hosting domains.
-    servers = [
-        h for h in ssh_hosts
-        if h["host"].lower() not in _SKIP_HOSTNAMES
-        and h.get("hostname", "").lower() not in _SKIP_HOSTNAMES
-    ]
-    return [
+    # Default: local machine enabled + all SSH hosts listed (disabled).
+    return [_local_config()] + [
         ServerConfig(
             host=h["host"],
             label=h["host"],
             enabled=False,
             ssh_user=h.get("user") or getpass.getuser(),
+            hostname=h.get("hostname"),
         )
-        for h in servers
+        for h in ssh_hosts
+        if h["host"].lower() not in _SKIP_HOSTNAMES
+        and h.get("hostname", "").lower() not in _SKIP_HOSTNAMES
     ]

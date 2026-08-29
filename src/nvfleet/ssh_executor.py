@@ -39,6 +39,26 @@ class RemotePythonNotFound(SSHCommandError):
     """Raised when python3 is not available on the remote server."""
 
 
+def _build_probe_args(
+    own_user: str | None = None,
+    reserved_offsets: dict[int, int] | None = None,
+) -> list[str]:
+    """Build the remote probe command line (after the interpreter).
+
+    Example: ['-', '--own-user', 'ethanjia', ...] — the probe script
+    is always fed via stdin, so probe args follow the '-' interpreter.
+    """
+    import shlex
+    import json as _json
+
+    args = ["-"]
+    if own_user:
+        args.extend(["--own-user", shlex.quote(own_user)])
+    if reserved_offsets:
+        args.extend(["--reserved-offsets", shlex.quote(_json.dumps(reserved_offsets))])
+    return args
+
+
 async def run_probe(
     host_alias: str,
     timeout: float = 5.0,
@@ -66,13 +86,9 @@ async def run_probe(
 
     # Build remote command — force UTF-8 on the remote side to avoid
     # GBK/cp1252 decode errors on Windows when reading the probe via stdin.
-    import shlex
-    import json as _json
-    remote_cmd = ["env", "PYTHONIOENCODING=utf-8", "python3", "-"]
-    if own_user:
-        remote_cmd.extend(["--own-user", shlex.quote(own_user)])
-    if reserved_offsets:
-        remote_cmd.extend(["--reserved-offsets", shlex.quote(_json.dumps(reserved_offsets))])
+    remote_cmd = ["env", "PYTHONIOENCODING=utf-8", "python3", *(
+        _build_probe_args(own_user, reserved_offsets)
+    )]
 
     # SSH multiplexing: reuse connections on Linux/macOS via Unix sockets.
     # Windows OpenSSH uses named pipes instead and chokes on Unix-style
@@ -145,6 +161,88 @@ async def run_probe(
             proc.returncode,
             stderr.decode("utf-8", errors="replace"),
         )
+
+    if proc.returncode != 0:
+        raise SSHCommandError(
+            proc.returncode,
+            stderr.decode("utf-8", errors="replace"),
+        )
+
+    return stdout.decode("utf-8"), latency_ms
+
+
+async def ping_rtt(
+    ip: str,
+    timeout: float = 2.0,
+) -> float | None:
+    """Network RTT via a single ICMP ping. Returns ms, or None on failure.
+
+    Falls back to SSH connect latency logically in the caller
+    (the probe latency itself). ICMP may be blocked on some networks.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ping", "-c", "1", "-W", "1", ip,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except (OSError, asyncio.TimeoutError):
+        return None
+    if proc.returncode != 0:
+        return None
+    # "time=0.434 ms" or "time<1 ms"
+    import re
+    text = stdout.decode("utf-8", errors="replace")
+    match = re.search(r"time[=<]([\d.]+)\s*ms", text)
+    return float(match.group(1)) if match else None
+
+
+async def run_probe_local(
+    timeout: float = 5.0,
+    own_user: str | None = None,
+    reserved_offsets: dict[int, int] | None = None,
+) -> tuple[str, float]:
+    """Execute the NVML probe on the local machine via ``python3 -`` stdin.
+
+    Identical code path as ``run_probe`` minus the SSH layer, so local
+    machines are treated exactly like remote ones (same JSON output).
+    Uses the currently running Python interpreter (stdlib-only probe).
+    """
+    import sys as _sys
+
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+
+    argv = [_sys.executable, *_build_probe_args(own_user, reserved_offsets)]
+    proc = await asyncio.create_subprocess_exec(
+        *argv,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(input=_PROBE_SCRIPT.encode("utf-8")),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        raise SSHTimeoutError(
+            "Local probe timed out after %ss" % timeout
+        )
+    finally:
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=3)
+            except (asyncio.TimeoutError, ProcessLookupError):
+                pass
+
+    latency_ms = (loop.time() - start) * 1000
 
     if proc.returncode != 0:
         raise SSHCommandError(
