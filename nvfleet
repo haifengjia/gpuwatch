@@ -1,18 +1,36 @@
 #!/usr/bin/env bash
 # NV Fleet launcher — starts nvfleet in its dedicated conda environment.
+# Works even when the parent GUI/PATH does not export conda (e.g. Tabby).
 set -e
 
-command -v conda >/dev/null 2>&1 || {
-    echo "error: conda not found in PATH" >&2
-    exit 1
-}
+CONDA_BASE=""
 
-CONDA_SH="$(conda info --base)/etc/profile.d/conda.sh"
-if [ ! -f "$CONDA_SH" ]; then
-    echo "error: cannot find conda.sh at $CONDA_SH" >&2
+if command -v conda >/dev/null 2>&1; then
+    CONDA_BASE="$(conda info --base)"
+else
+    # Fall back to well-known install locations.
+    for CAND in \
+        "$HOME/anaconda3" "$HOME/miniconda3" \
+        "/opt/anaconda3" "/opt/miniconda3" \
+        "/usr/local/anaconda3" "/usr/local/miniconda3"
+    do
+        if [ -x "$CAND/condabin/conda" ]; then
+            CONDA_BASE="$CAND"
+            break
+        fi
+    done
+fi
+
+CONDA_SH="$CONDA_BASE/etc/profile.d/conda.sh"
+if [ -z "$CONDA_BASE" ] || [ ! -f "$CONDA_SH" ]; then
+    echo "error: cannot find conda (looked in PATH and common install dirs)" >&2
     exit 1
 fi
 
 source "$CONDA_SH"
+if ! conda env list | grep -qE "^nvfleet[[:space:]]"; then
+    echo "error: conda env 'nvfleet' not found; run: conda env create -f environment.yml" >&2
+    exit 1
+fi
 conda activate nvfleet
 exec nvfleet "$@"
