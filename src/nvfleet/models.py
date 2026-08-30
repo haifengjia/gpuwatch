@@ -91,6 +91,8 @@ class GPUInfo:
     encoder_avg_fps: int = 0
     decoder_util: int = 0  # NVDEC utilization % (device-wide)
     decoder_sessions: int = 0
+    graphics_clock_mhz: int = 0
+    graphics_clock_max_mhz: int = 0
     processes: list[GPUProcess] = field(default_factory=list)
     other_users: list[OtherUserMemory] = field(default_factory=list)
 
@@ -136,6 +138,8 @@ class GPUInfo:
             encoder_avg_fps=data.get("encoder_avg_fps", 0),
             decoder_util=data.get("decoder_util", 0),
             decoder_sessions=data.get("decoder_sessions", 0),
+            graphics_clock_mhz=data.get("graphics_clock_mhz", 0),
+            graphics_clock_max_mhz=data.get("graphics_clock_max_mhz", 0),
             processes=processes,
             other_users=other_users,
         )
@@ -146,6 +150,10 @@ class HostMetrics:
     """Host-level (non-GPU) metrics: CPU, temperature, RAM, swap."""
 
     cpu_percent: float | None = None
+    cpu_freq_mhz: int | None = None
+    cpu_freq_max_mhz: int | None = None
+    cpu_power_watts: float | None = None
+    cpu_power_max_watts: float | None = None
     memory_used_mb: int | None = None
     memory_total_mb: int | None = None
     swap_used_mb: int | None = None
@@ -164,6 +172,10 @@ class HostMetrics:
             return None
         return cls(
             cpu_percent=data.get("cpu_percent"),
+            cpu_freq_mhz=data.get("cpu_freq_mhz"),
+            cpu_freq_max_mhz=data.get("cpu_freq_max_mhz"),
+            cpu_power_watts=data.get("cpu_power_watts"),
+            cpu_power_max_watts=data.get("cpu_power_max_watts"),
             memory_used_mb=data.get("memory_used_mb"),
             memory_total_mb=data.get("memory_total_mb"),
             swap_used_mb=data.get("swap_used_mb"),

@@ -452,6 +452,36 @@ def _gpu_process_utilizations(lib, handle) -> dict[int, tuple[int, int, int, int
     return result
 
 
+def _get_gfx_clock(lib, handle) -> tuple[int | None, int | None]:
+    """(current_graphics_mhz, max_graphics_mhz) via NVML (not hardcoded)."""
+    fn = getattr(lib, "nvmlDeviceGetClockInfo", None)
+    fn_max = getattr(lib, "nvmlDeviceGetMaxClockInfo", None)
+    if fn is None:
+        return None, None
+    fn.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_uint)]
+    fn.restype = ctypes.c_int
+    if fn_max is not None:
+        fn_max.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_uint)]
+        fn_max.restype = ctypes.c_int
+
+    cur = ctypes.c_uint(0)
+    try:
+        rc = fn(handle, 1, ctypes.byref(cur))  # NVML_CLOCK_GRAPHICS
+    except Exception:
+        return None, None
+    cur_mhz = cur.value if rc == NVML_SUCCESS else None
+
+    max_mhz = None
+    if fn_max is not None:
+        m = ctypes.c_uint(0)
+        try:
+            rc = fn_max(handle, 1, ctypes.byref(m))
+        except Exception:
+            return cur_mhz, None
+        max_mhz = m.value if rc == NVML_SUCCESS else None
+    return cur_mhz, max_mhz
+
+
 def _get_enc_util(lib, handle) -> int | None:
     """Encoder utilization percent, or None if unsupported/failed."""
     fn = getattr(lib, "nvmlDeviceGetEncoderUtilization", None)
@@ -859,6 +889,108 @@ def _cpu_temperature() -> int | None:
     return None
 
 
+def _cpu_freq() -> tuple[int | None, int | None]:
+    """(current_mhz, max_mhz) for the CPU.
+
+    Max comes from cpufreq sysfs when the kernel exposes it; otherwise
+    (most servers disable cpufreq) it falls back to the highest core
+    frequency currently observed — never hardcoded.
+    """
+    cur: list[int] = []
+    try:
+        with open("/proc/cpuinfo", "r") as f:
+            for line in f:
+                if line.startswith("cpu MHz"):
+                    try:
+                        cur.append(round(float(line.split(":")[1].strip())))
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+
+    max_mhz = None
+    for path in (
+        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq",
+        "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq",
+    ):
+        try:
+            with open(path, "r") as f:
+                max_mhz = int(f.read().strip()) // 1000  # kHz -> MHz
+            break
+        except (OSError, ValueError):
+            continue
+    if max_mhz is None and cur:
+        max_mhz = max(cur)
+
+    return (round(sum(cur) / len(cur)) if cur else None), max_mhz
+
+
+def _rapl_start() -> tuple[float, int] | None:
+    """Sample CPU package energy (µJ) for power calculation.
+
+    Returns (monotonic_time, energy_uj).
+    """
+    try:
+        import os
+        for zone in os.listdir("/sys/class/powercap"):
+            base = f"/sys/class/powercap/{zone}"
+            energy = os.path.join(base, "energy_uj")
+            if os.path.exists(energy):
+                try:
+                    with open(energy, "r") as f:
+                        e = int(f.read().strip())
+                    return (time.monotonic(), e)
+                except (OSError, ValueError):
+                    continue
+    except OSError:
+        pass
+    return None
+
+
+def _rapl_max_power_watts() -> float | None:
+    """Package power limit from powercap, converted to watts."""
+    try:
+        import os
+        for zone in os.listdir("/sys/class/powercap"):
+            base = f"/sys/class/powercap/{zone}"
+            for name in ("constraint_0_max_power_uw", "constraint_1_max_power_uw"):
+                path = os.path.join(base, name)
+                if os.path.exists(path):
+                    try:
+                        with open(path, "r") as f:
+                            return int(f.read().strip()) / 1e6
+                    except (OSError, ValueError):
+                        continue
+    except OSError:
+        pass
+    return None
+
+
+def _cpu_power(rapl_start: tuple[float, int] | None) -> float | None:
+    """CPU package power in watts from a delta energy reading."""
+    try:
+        import os
+        if rapl_start is None:
+            return None
+        for zone in os.listdir("/sys/class/powercap"):
+            energy = f"/sys/class/powercap/{zone}/energy_uj"
+            if os.path.exists(energy):
+                try:
+                    with open(energy, "r") as f:
+                        e2 = int(f.read().strip())
+                except (OSError, ValueError):
+                    continue
+                t2 = time.monotonic()
+                dt = t2 - rapl_start[0]
+                energy_u = e2 - rapl_start[1]
+                if dt <= 0:
+                    return None
+                return max(round(energy_u / dt / 1e6, 1), 0.0)
+    except OSError:
+        pass
+    return None
+
+
 def _cpu_info() -> tuple[int | None, str | None]:
     """(logical_cores, model_name) from /proc/cpuinfo.
 
@@ -903,12 +1035,14 @@ def probe(
     """
     t_start = time.monotonic()
 
-    # CPU% is sampled over the probe's own runtime (start here, read
-    # again just before returning) — no artificial sleep required.
+    # CPU% and CPU package power are sampled over the probe's own
+    # runtime (start here, read again just before returning).
     stat_start = _read_cpu_stat()
+    rapl_start = _rapl_start()
     meminfo = _meminfo()
     temp_c = _cpu_temperature()
     cpu_cores, cpu_model = _cpu_info()
+    cpu_freq_mhz, cpu_freq_max_mhz = _cpu_freq()
 
     # Find and load libnvidia-ml
     lib_path = ctypes.util.find_library("nvidia-ml")
@@ -1077,6 +1211,11 @@ def probe(
             except Exception:
                 gpu["power_limit_watts"] = 0.0
 
+            # GPU graphics clock (current / max from NVML)
+            gfx_cur_mhz, gfx_max_mhz = _get_gfx_clock(lib, handle)
+            gpu["graphics_clock_mhz"] = gfx_cur_mhz if gfx_cur_mhz is not None else 0
+            gpu["graphics_clock_max_mhz"] = gfx_max_mhz if gfx_max_mhz is not None else 0
+
             # ENC / DEC utilization + encoder session stats
             enc_util = _get_enc_util(lib, handle)
             dec_util = _get_dec_util(lib, handle)
@@ -1120,6 +1259,10 @@ def probe(
                 "temp_c": temp_c,
                 "cpu_cores": cpu_cores,
                 "cpu_model": cpu_model,
+                "cpu_freq_mhz": cpu_freq_mhz,
+                "cpu_freq_max_mhz": cpu_freq_max_mhz,
+                "cpu_power_watts": _cpu_power(rapl_start),
+                "cpu_power_max_watts": _rapl_max_power_watts(),
             },
             "elapsed_ms": round(elapsed, 1),
             "reserved_offsets": reserved_offsets if reserved_offsets else {},

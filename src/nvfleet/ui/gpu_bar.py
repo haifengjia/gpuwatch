@@ -157,6 +157,28 @@ def power_bar(watts: float, limit_watts: float, width: int = 6, color: str | Non
     return result
 
 
+def freq_bar(current: int, maximum: int | None = None, width: int = 6) -> Text:
+    """Frequency bar like '████░░ 2100MHz'. Max is queried at runtime."""
+    if not current:
+        return Text("░" * width + "    -", style=_EMPTY_STYLE)
+    pct = (current / maximum) * 100 if maximum else 0.0
+    style = level_style(pct)
+    result = _bar_text(pct, width, style)
+    result.append(f" {current}MHz", style=style)
+    return result
+
+
+def watts_bar(watts: float | None, max_watts: float | None = None, width: int = 6) -> Text:
+    """Power bar like '████░░ 87W'. No label, matches the hardware row."""
+    if watts is None:
+        return Text("░" * width + "    -", style=_EMPTY_STYLE)
+    pct = (watts / max_watts) * 100 if max_watts else 0.0
+    style = level_style(pct)
+    result = _bar_text(pct, width, style)
+    result.append(f" {watts:.0f}W", style=style)
+    return result
+
+
 def media_str(label: str, util: int, sessions: int = 0, bar_width: int = 4) -> Text:
     """Render ENC/DEC cell like: 'ENC ███░ 75% x2'.
 

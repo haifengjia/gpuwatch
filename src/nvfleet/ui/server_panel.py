@@ -23,6 +23,7 @@ from ..models import GPUInfo, HostMetrics, ServerSnapshot
 from .gpu_bar import (
     _LEVEL_COLORS,
     _format_mem,
+    freq_bar,
     level_from_values,
     media_str,
     mem_labeled_bar,
@@ -31,6 +32,7 @@ from .gpu_bar import (
     power_bar,
     temp_bar,
     utilization_bar,
+    watts_bar,
 )
 
 
@@ -246,6 +248,7 @@ class ServerPanel(Static):
         grid.add_column("mem", width=36, justify="left")
         grid.add_column("temp", width=9, justify="left")
         grid.add_column("power", width=11, justify="left")
+        grid.add_column("clock", width=13, justify="left")
         grid.add_column("enc", width=13, justify="left")
         grid.add_column("dec", width=13, justify="left")
 
@@ -262,6 +265,7 @@ class ServerPanel(Static):
                 memory_bar(gpu.memory_used_mb, gpu.memory_total_mb, width=18),
                 temp_bar(gpu.temperature_c),
                 power_bar(gpu.power_watts, gpu.power_limit_watts),
+                freq_bar(gpu.graphics_clock_mhz, gpu.graphics_clock_max_mhz or None, width=6),
                 media_str("ENC", gpu.encoder_util, gpu.encoder_sessions),
                 media_str("DEC", gpu.decoder_util, gpu.decoder_sessions),
             ]
@@ -350,6 +354,12 @@ class ServerPanel(Static):
         if host.temp_c is not None:
             line.append(Text("   "))
             line.append_text(temp_bar(host.temp_c, width=5))
+        if host.cpu_power_watts is not None:
+            line.append(Text("   "))
+            line.append_text(watts_bar(host.cpu_power_watts, host.cpu_power_max_watts, width=6))
+        if host.cpu_freq_mhz is not None:
+            line.append(Text("   "))
+            line.append_text(freq_bar(host.cpu_freq_mhz, host.cpu_freq_max_mhz, width=6))
         if host.memory_used_mb is not None and host.memory_total_mb:
             line.append(Text("   "))
             line.append_text(mem_labeled_bar("RAM", host.memory_used_mb, host.memory_total_mb, width=10))
