@@ -108,11 +108,13 @@ def _render_bar(percent: float, width: int) -> str:
 
 
 def utilization_bar(percent: int, width: int = 10, color: str | None = None) -> Text:
-    """Render a utilization bar like: '████████░░ 72%'."""
+    """Render a utilization bar like: '████████░░ 72%'.
+    The percent is snugged against the bar and padded on the right so
+    it never touches the next column."""
     pct = max(0, min(percent, 100))
     style = Style(color=color) if color else level_style(pct)
     result = _bar_text(pct, width, style)
-    result.append(f" {pct:3d}%", style=style)
+    result.append(f" {pct:2d}% ", style=style)
     return result
 
 
