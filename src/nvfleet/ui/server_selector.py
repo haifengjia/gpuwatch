@@ -87,7 +87,7 @@ class ServerItem(Static, can_focus=True):
 
     # ── disk usage (only while this row is focused/selected) -------
 
-    _BAR_WIDTH = 44
+    _BAR_WIDTH = 40  # 4-space indent + 40 fits a 50-wide sidebar on one line
 
     def _render_disks(self) -> str:
         out = ""
@@ -96,19 +96,16 @@ class ServerItem(Static, can_focus=True):
             total_g = d.total_mb / 1024
             used_g = d.used_mb / 1024
             pct = d.percent
+            color = _LEVEL_COLORS[level_from_values(pct)]
             outer = int(round(pct / 100.0 * self._BAR_WIDTH))
             outer = min(outer, self._BAR_WIDTH)
-            color = _LEVEL_COLORS[level_from_values(pct)]
             bar = (
                 f"    [{color}]{'█' * outer}[/]"
                 f"[bright_black]{'░' * (self._BAR_WIDTH - outer)}[/]"
             )
-            label_line = (
-                f"    [white]{label:<18}[/]"
-                f"[dim]{used_g:7.1f} GiB / {total_g:7.1f} GiB        [/]"
-                f"[green]{pct:3.0f}%[/]"
-            )
-            out += "\n" + label_line
+            out += f"\n    [{color}]{label}[/]"
+            out += f"\n    [{color}]{used_g:7.1f} GiB / {total_g:7.1f} GiB[/]"
+            out += f"\n    [{color}]{pct:3.0f}%[/]"
             out += "\n" + bar
         return out
 
