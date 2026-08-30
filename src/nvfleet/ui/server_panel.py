@@ -209,16 +209,19 @@ class ServerPanel(Static):
         summary_row = self._build_gpu_summary(snap)
         if summary_row is not None:
             wrapper.add_row(Text(""))  # margin above the summary line
-            wrapper.add_row(summary_row)
+            wrapper.add_row(Text(summary_row, style="dim"))
         wrapper.add_row(self._gpu_grid(snap))
 
+        note_parts: list[str] = []
         for gpu in snap.gpus:
             if gpu.index in self._expanded:
                 wrapper.add_row(self._build_proc_table(gpu))
             else:
                 summary = self._build_summary(gpu)
                 if summary is not None:
-                    wrapper.add_row(summary)
+                    note_parts.append(summary)
+        if note_parts:
+            wrapper.add_row(Text("Note: " + " | ".join(note_parts), style="dim"))
 
         return wrapper
 
@@ -322,8 +325,8 @@ class ServerPanel(Static):
 
         return table
 
-    def _build_summary(self, gpu: GPUInfo) -> Text | None:
-        """One-line process summary for a collapsed GPU."""
+    def _build_summary(self, gpu: GPUInfo) -> str | None:
+        """One-line process summary for a collapsed GPU (no indent)."""
         own = [p for p in gpu.processes if p.is_own]
         other = gpu.other_users
         if not own and not other:
@@ -336,10 +339,10 @@ class ServerPanel(Static):
             parts.append(
                 f"{ou.user}: {ou.process_count} proc, {_format_mem(ou.total_memory_mb)}"
             )
-        return Text(f"  GPU {gpu.index}  " + " | ".join(parts), style="dim")
+        return f"GPU {gpu.index}: " + " | ".join(parts)
 
-    def _build_gpu_summary(self, snap: ServerSnapshot) -> Table | None:
-        """Centered one-line GPU summary: cards, busy count, NV, CUDA."""
+    def _build_gpu_summary(self, snap: ServerSnapshot) -> str | None:
+        """One-line GPU summary: cards, busy count, NV, CUDA (left aligned)."""
         if not snap.gpus:
             return None
         from collections import Counter
@@ -362,10 +365,7 @@ class ServerPanel(Static):
                 f"{v}*" if d else v for v, d in hm.cuda_versions
             ))
 
-        centered = Table(show_header=False, box=None, expand=True, padding=0)
-        centered.add_column("summary", justify="center")
-        centered.add_row(Text(" | ".join(parts), style="dim"))
-        return centered
+        return " | ".join(parts)
 
     def _build_host_row(self, host: HostMetrics | None) -> Text | None:
         """One-line host summary above the GPU grid."""
