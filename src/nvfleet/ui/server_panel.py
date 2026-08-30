@@ -358,7 +358,7 @@ class ServerPanel(Static):
         parts.append(f"{busy} busy")
         hm = snap.host_metrics
         if hm and hm.driver_version:
-            parts.append("NV" + hm.driver_version)
+            parts.append("NV Driver " + hm.driver_version)
         if hm and hm.cuda_versions:
             parts.append("CUDA " + ", ".join(
                 f"{v}*" if d else v for v, d in hm.cuda_versions
