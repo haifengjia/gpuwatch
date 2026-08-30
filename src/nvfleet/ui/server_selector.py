@@ -65,10 +65,9 @@ class ServerItem(Static, can_focus=True):
 
     def set_disks(self, disks: list[DiskInfo]) -> None:
         self._disks = disks
-        if self.has_focus:
-            self.refresh(layout=True)
-        else:
-            self.refresh()
+        # Always relayout: expanded content changes the row height, and
+        # refresh() without layout=True clips new lines (auto height).
+        self.refresh(layout=True)
 
     def set_cpu(self, desc: str) -> None:
         self._cpu_desc = desc
