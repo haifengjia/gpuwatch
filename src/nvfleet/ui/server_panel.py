@@ -209,7 +209,10 @@ class ServerPanel(Static):
         summary_row = self._build_gpu_summary(snap)
         if summary_row is not None:
             wrapper.add_row(Text(""))  # margin above the summary line
-            wrapper.add_row(Text(summary_row, style="dim"))
+            centered = Table(show_header=False, box=None, expand=True, padding=0)
+            centered.add_column("summary", justify="center")
+            centered.add_row(Text(summary_row, style="dim"))
+            wrapper.add_row(centered)
         wrapper.add_row(self._gpu_grid(snap))
 
         note_parts: list[str] = []
@@ -339,7 +342,7 @@ class ServerPanel(Static):
             parts.append(
                 f"{ou.user}: {ou.process_count} proc, {_format_mem(ou.total_memory_mb)}"
             )
-        return f"GPU {gpu.index}: " + " | ".join(parts)
+        return f"GPU {gpu.index} (" + " | ".join(parts) + ")"
 
     def _build_gpu_summary(self, snap: ServerSnapshot) -> str | None:
         """One-line GPU summary: cards, busy count, NV, CUDA (left aligned)."""
