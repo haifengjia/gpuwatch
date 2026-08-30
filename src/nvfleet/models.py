@@ -252,18 +252,30 @@ class HostHardware:
             memory_total_mb=data.get("memory_total_mb"),
         )
 
-    def cpu_desc(self) -> str:
-        """'24c | AMD Ryzen 9 5900X 12-Core | 64G'."""
-        parts: list[str] = []
+    def cpu_brief(self) -> str:
+        """Compact label like 'Intel Core i7-11700F (16c)' or 'AMD EPYC 7K62 (96c)'."""
+        import re
+
+        model = self.cpu_model or ""
+        # '11th Gen Intel...' -> drop the generation prefix
+        model = re.sub(r"^\s*[\d]+(st|nd|rd|th)?\s+Gen\s+", "", model, flags=re.I)
+        # drop ' @ 2.50GHz' / trailing clock info
+        model = re.sub(r"\s*@\s*[\d.]+\s*GHz.*$", "", model, flags=re.I)
+        # de-corporate the tm/reg marks
+        model = model.replace("(R)", "").replace("(TM)", "")
+        model = re.sub(r"\s+", " ", model).strip()
+        # trailing '-Core' / 'Processor' / 'CPU' words
+        model = re.sub(
+            r"\s+[\d]+-Core\s*$|\s+Processor\s*$|\s+Core\s*$|\s+CPU\s*$",
+            "",
+            model,
+            flags=re.I,
+        ).strip()
+
+        parts = [model] if model else []
         if self.cpu_cores:
-            parts.append(f"{self.cpu_cores}c")
-        if self.cpu_model:
-            model = self.cpu_model.replace(" CPU", "").replace(" Processor", "")
-            model = model.replace("AMD ", "").replace("Intel ", "")
-            parts.append(model[:32])
-        if self.memory_total_mb:
-            parts.append(f"{self.memory_total_mb / 1024:.0f}G")
-        return " | ".join(parts)
+            parts.append(f"({self.cpu_cores}c)")
+        return " ".join(parts)
 
     def gpu_desc(self, gpus: list[GPUInfo]) -> str:
         """'RTX 3090 ×2 | 5 proc running'."""

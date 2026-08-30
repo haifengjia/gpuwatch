@@ -208,8 +208,8 @@ class ServerPanel(Static):
             wrapper.add_row(host_row)
         summary_row = self._build_gpu_summary(snap)
         if summary_row is not None:
+            wrapper.add_row(Text(""))  # margin above the summary line
             wrapper.add_row(summary_row)
-        wrapper.add_row(Text(""))
         wrapper.add_row(self._gpu_grid(snap))
 
         for gpu in snap.gpus:
@@ -398,11 +398,4 @@ class ServerPanel(Static):
         if host.swap_used_mb is not None and host.swap_total_mb:
             line.append(Text("   "))
             line.append_text(mem_labeled_bar("SWAP", host.swap_used_mb, host.swap_total_mb, width=8))
-        if host.driver_version:
-            line.append(Text("   "))
-            line.append(Text("NV" + host.driver_version, style="dim"))
-        if host.cuda_versions:
-            line.append(Text("   "))
-            cuda_parts = [f"{v}*" if d else v for v, d in host.cuda_versions]
-            line.append(Text("CUDA " + ", ".join(cuda_parts), style="dim"))
         return line

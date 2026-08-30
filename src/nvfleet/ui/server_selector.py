@@ -109,7 +109,7 @@ class ServerItem(Static, can_focus=True):
 
         dim = Style(color="bright_black")
         if self._cpu_desc:
-            out.append(f"\n    CPU {self._cpu_desc}", style=dim)
+            out.append(f"\n    {self._cpu_desc}", style=dim)
 
         for d in self._disks:
             label = d.name + (f" ({d.kind})" if d.kind else "")
