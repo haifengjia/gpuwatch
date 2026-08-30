@@ -371,5 +371,6 @@ class ServerPanel(Static):
             line.append(Text("NVDriver " + host.driver_version, style="dim"))
         if host.cuda_versions:
             line.append(Text("   "))
-            line.append(Text("CUDA " + " ".join(host.cuda_versions), style="dim"))
+            cuda_parts = [f"{v}*" if d else v for v, d in host.cuda_versions]
+            line.append(Text("CUDA " + ", ".join(cuda_parts), style="dim"))
         return line

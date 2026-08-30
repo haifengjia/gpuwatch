@@ -1008,16 +1008,26 @@ def _driver_version(lib) -> str | None:
     return buf.value.decode("utf-8", errors="replace")
 
 
-def _cuda_versions() -> list[str]:
-    """All installed CUDA toolkit versions, discovered from nvcc binaries.
+def _cuda_versions() -> list[tuple[str, bool]]:
+    """All installed CUDA toolkit versions, sorted ascending.
 
-    Scans /usr/local/cuda*, standard /usr/local/cuda, and nvcc on PATH —
-    no sudo required. Returns a de-duplicated version list.
+    Each entry is (version, is_default). The default one is determined
+    by what /usr/local/cuda (or the plain /usr/local/cuda path) points
+    to. No sudo required.
     """
     import glob
     import re
     import subprocess
     import os
+
+    default_version = None
+    try:
+        target = os.readlink("/usr/local/cuda")
+        m = re.search(r"cuda-([0-9.]+)", target)
+        if m:
+            default_version = m.group(1)
+    except OSError:
+        pass
 
     candidates: list[str] = []
     seen_paths: set[str] = set()
@@ -1036,7 +1046,7 @@ def _cuda_versions() -> list[str]:
     except OSError:
         pass
 
-    versions: list[str] = []
+    versions: dict[str, bool] = {}
     for nvcc in candidates:
         try:
             out = subprocess.check_output(
@@ -1048,9 +1058,26 @@ def _cuda_versions() -> list[str]:
             continue
         text = out.decode("utf-8", errors="replace")
         m = re.search(r"release\s+([0-9.]+),", text)
-        if m and m.group(1) not in versions:
-            versions.append(m.group(1))
-    return versions
+        if not m:
+            continue
+        version = m.group(1)
+        is_default = (
+            (default_version is not None and version == default_version)
+            or not nvcc.startswith("/usr/local/cuda-")
+        ) and nvcc.startswith("/usr/local/cuda/")
+        # nvcc on PATH (e.g. from conda) is never the default toolkit.
+        if not nvcc.startswith("/usr/local/cuda"):
+            is_default = False
+        if version not in versions:
+            versions[version] = is_default
+        else:
+            versions[version] = versions[version] or is_default
+
+    # Ascending numeric sort: 11.8 < 12.4 < 12.8 ...
+    def sort_key(v: str) -> tuple[int, ...]:
+        return tuple(int(x) for x in v.split("."))
+
+    return sorted(versions.items(), key=lambda kv: sort_key(kv[0]))
 
 
 def _cpu_info() -> tuple[int | None, str | None]:

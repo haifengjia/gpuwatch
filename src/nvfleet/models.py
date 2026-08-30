@@ -160,7 +160,7 @@ class HostMetrics:
     swap_total_mb: int | None = None
     temp_c: int | None = None
     driver_version: str | None = None
-    cuda_versions: list[str] = field(default_factory=list)
+    cuda_versions: list[tuple[str, bool]] = field(default_factory=list)
 
     @property
     def memory_percent(self) -> float | None:
@@ -184,7 +184,10 @@ class HostMetrics:
             swap_total_mb=data.get("swap_total_mb"),
             temp_c=data.get("temp_c"),
             driver_version=data.get("driver_version"),
-            cuda_versions=list(data.get("cuda_versions") or []),
+            cuda_versions=[
+                (str(v), bool(d))
+                for v, d in (data.get("cuda_versions") or [])
+            ],
         )
 
 
