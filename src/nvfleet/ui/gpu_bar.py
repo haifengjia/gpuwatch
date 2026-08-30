@@ -192,7 +192,7 @@ def media_str(label: str, util: int, sessions: int = 0, bar_width: int = 4) -> T
         result.append(" 0%", style=style)
         return result
 
-    style = Style(color="cyan" if label == "ENC" else "magenta")
+    style = level_style(util)
     pct = max(0, min(util, 100))
     result = Text(f"{label} ", style=style)
     result.append_text(_bar_text(pct, bar_width, style))
