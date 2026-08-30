@@ -7,6 +7,7 @@ Space key toggles monitoring on/off.
 
 from __future__ import annotations
 
+from rich.style import Style
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
@@ -15,7 +16,7 @@ from textual.message import Message
 from textual.widgets import Label, Static
 
 from ..models import DiskInfo
-from .gpu_bar import _LEVEL_COLORS, level_from_values
+from .gpu_bar import _bar_text, level_style
 
 
 class ServerItem(Static, can_focus=True):
@@ -71,42 +72,47 @@ class ServerItem(Static, can_focus=True):
         self.refresh()
         self.post_message(self.Toggled(self.host, self._enabled))
 
-    def render(self) -> str:
-        check = "[bold green]◉[/]" if self._enabled else "[dim]○[/]"
-        has_focus = "[cyan]▸[/]" if self.has_focus else " "
-        status = f" {self._status}" if self._status else ""
-        head = f"{has_focus} {check} {self.server_label}{status}"
-        summary = ""
+    def render(self) -> Text:
+        """Render with rich Text styles — identical palette to the right
+        hand hardware rows (level_style, 4 tiers)."""
+        check = "◉" if self._enabled else "○"
+        check_style = Style(bold=True, color="green") if self._enabled else Style(color="bright_black")
+        cursor = "▸" if self.has_focus else " "
+        cursor_style = Style(color="cyan")
+        t = Text()
+        t.append(cursor, style=cursor_style)
+        t.append(" ", style=cursor_style)
+        t.append(check, style=check_style)
+        t.append(f" {self.server_label}", style=None)
+        if self._status:
+            t.append(f" {self._status}", style=None)
         if self._ip:
-            summary += f"\n    [dim]{self._ip}[/]"
+            t.append(f"\n    {self._ip}", style=Style(color="bright_black"))
         if self._user:
-            summary += f"\n    [dim]{self._user}[/]"
+            t.append(f"\n    {self._user}", style=Style(color="bright_black"))
         if self.has_focus and self._disks:
-            summary += self._render_disks()
-        return head + summary
+            t.append_text(self._disks_text())
+        return t
 
     # ── disk usage (only while this row is focused/selected) -------
 
-    _BAR_WIDTH = 40  # 4-space indent + 40 fits a 50-wide sidebar on one line
+    def _disks_text(self) -> Text:
+        """Disk blocks sized to the actual sidebar width (no wrapping)."""
+        out = Text()
+        width = self.size.width if self.size and self.size.width else 50
+        bar_w = max(10, width - 8)  # indent(4) + sidebar padding(2) slack
 
-    def _render_disks(self) -> str:
-        out = ""
         for d in self._disks:
             label = d.name + (f" ({d.kind})" if d.kind else "")
             total_g = d.total_mb / 1024
             used_g = d.used_mb / 1024
             pct = d.percent
-            color = _LEVEL_COLORS[level_from_values(pct)]
-            outer = int(round(pct / 100.0 * self._BAR_WIDTH))
-            outer = min(outer, self._BAR_WIDTH)
-            bar = (
-                f"    [{color}]{'█' * outer}[/]"
-                f"[bright_black]{'░' * (self._BAR_WIDTH - outer)}[/]"
-            )
-            out += f"\n    [{color}]{label}[/]"
-            out += f"\n    [{color}]{used_g:7.1f} GiB / {total_g:7.1f} GiB[/]"
-            out += f"\n    [{color}]{pct:3.0f}%[/]"
-            out += "\n" + bar
+            style = level_style(pct)
+            out.append(f"\n    {label}", style=style)
+            out.append(f"\n    {used_g:7.1f} GiB / {total_g:7.1f} GiB", style=style)
+            out.append(f"\n    {pct:3.0f}%", style=style)
+            out.append("\n    ")
+            out.append_text(_bar_text(pct, bar_w, style))
         return out
 
     def on_key(self, event: events.Key) -> None:
