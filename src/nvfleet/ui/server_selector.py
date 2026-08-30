@@ -11,7 +11,7 @@ from rich.style import Style
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import VerticalScroll
 from textual.message import Message
 from textual.widgets import Label, Static
 
@@ -44,6 +44,7 @@ class ServerItem(Static, can_focus=True):
         self._user: str = ""
         self._disks: list[DiskInfo] = []
         self._disks_open: bool = False
+        self._cpu_desc: str = ""
 
     @property
     def enabled(self) -> bool:
@@ -66,6 +67,10 @@ class ServerItem(Static, can_focus=True):
             self.refresh(layout=True)
         else:
             self.refresh()
+
+    def set_cpu(self, desc: str) -> None:
+        self._cpu_desc = desc
+        self.refresh()
 
     def toggle(self) -> None:
         """Toggle monitoring state."""
@@ -95,13 +100,18 @@ class ServerItem(Static, can_focus=True):
             t.append_text(self._disks_text())
         return t
 
-    # ── disk usage (visible while this row is focused AND expanded) -------
+    # ── CPU + disk usage (visible while this row is focused AND expanded) --
 
     def _disks_text(self) -> Text:
-        """Disk blocks sized to the actual sidebar width (no wrapping)."""
+        """CPU line + per-disk blocks fitted to the actual sidebar width."""
         out = Text()
         width = self.size.width if self.size and self.size.width else 50
-        bar_w = max(10, width - 8)  # indent(4) + sidebar padding(2) slack
+        pad = width - 10  # indent(4) + padding slack
+        bar_w = max(10, width - 8)
+
+        dim = Style(color="bright_black")
+        if self._cpu_desc:
+            out.append(f"\n    CPU {self._cpu_desc}", style=dim)
 
         for d in self._disks:
             label = d.name + (f" ({d.kind})" if d.kind else "")
@@ -109,8 +119,14 @@ class ServerItem(Static, can_focus=True):
             used_g = d.used_mb / 1024
             pct = d.percent
             style = level_style(pct)
-            out.append(f"\n    {label} {pct:3.0f}%", style=style)
-            out.append(f"\n    {used_g:.1f}G/{total_g:.1f}G", style=style)
+            line = Text()
+            line.append(f"    {label}", style=style)
+            line.append(" " * max(1, pad - len(label) - len(f"{used_g:.1f}G/{total_g:.1f}G") - 5))
+            line.append(f"{used_g:.1f}G/{total_g:.1f}G", style=style)
+            line.append(" " * max(1, 5 - len(f"{pct:3.0f}%")))
+            line.append(f"{pct:3.0f}%", style=style)
+            out.append("\n")
+            out.append_text(line)
             out.append("\n    ")
             out.append_text(_bar_text(pct, bar_w, style))
         return out
@@ -128,9 +144,10 @@ class ServerItem(Static, can_focus=True):
             event.stop()
 
 
-class ServerSelector(Vertical):
+class ServerSelector(VerticalScroll):
     """Sidebar listing all discovered servers with toggles.
 
+    Scrollable (mouse wheel + drag bar) once expanded items grow tall.
     Handles up/down arrow keys for navigating between ServerItem children.
     Messages from ServerItem bubble through here to the App automatically.
     """
@@ -141,6 +158,9 @@ class ServerSelector(Vertical):
         height: 1fr;
         border: solid $primary-background;
         padding: 1 0;
+        scrollbar-size: 1 1;
+        scrollbar-color: $primary 20%;
+        scrollbar-color-active: $accent;
     }
 
     ServerItem {
@@ -186,6 +206,12 @@ class ServerSelector(Vertical):
         item = self._items.get(host)
         if item is not None:
             item.set_disks(disks)
+
+    def update_cpu(self, host: str, desc: str) -> None:
+        """Update the CPU description line of a server item."""
+        item = self._items.get(host)
+        if item is not None:
+            item.set_cpu(desc)
 
     def on_key(self, event: events.Key) -> None:
         """Arrow keys navigate between server items."""

@@ -121,6 +121,16 @@ class NVFleetApp(App):
             if snapshot.host_metrics is not None:
                 self._selector.update_disks(host, snapshot.host_metrics.disks)
 
+            if snapshot.hardware is not None:
+                hw = snapshot.hardware
+                desc = ""
+                if hw.cpu_model and hw.cpu_cores:
+                    desc = f"{hw.cpu_model[:36]} | {hw.cpu_cores}c"
+                elif hw.cpu_cores:
+                    desc = f"{hw.cpu_cores}c"
+                if desc:
+                    self._selector.update_cpu(host, desc)
+
     # ── server toggle handler (bubbles up from ServerItem) ───────────
 
     async def on_server_item_toggled(self, event: ServerItem.Toggled) -> None:
