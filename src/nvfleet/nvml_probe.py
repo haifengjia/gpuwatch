@@ -991,6 +991,68 @@ def _cpu_power(rapl_start: tuple[float, int] | None) -> float | None:
     return None
 
 
+def _driver_version(lib) -> str | None:
+    """NVIDIA driver version via NVML (no privileges needed)."""
+    fn = getattr(lib, "nvmlSystemGetDriverVersion", None)
+    if fn is None:
+        return None
+    fn.argtypes = [ctypes.c_char_p, ctypes.c_uint]
+    fn.restype = ctypes.c_int
+    buf = ctypes.create_string_buffer(80)
+    try:
+        rc = fn(buf, ctypes.c_uint(len(buf)))
+    except Exception:
+        return None
+    if rc != NVML_SUCCESS:
+        return None
+    return buf.value.decode("utf-8", errors="replace")
+
+
+def _cuda_versions() -> list[str]:
+    """All installed CUDA toolkit versions, discovered from nvcc binaries.
+
+    Scans /usr/local/cuda*, standard /usr/local/cuda, and nvcc on PATH —
+    no sudo required. Returns a de-duplicated version list.
+    """
+    import glob
+    import re
+    import subprocess
+    import os
+
+    candidates: list[str] = []
+    seen_paths: set[str] = set()
+
+    def add(path: str) -> None:
+        if path and path not in seen_paths and os.path.exists(path):
+            seen_paths.add(path)
+            candidates.append(path)
+
+    add("/usr/local/cuda/bin/nvcc")
+    for p in sorted(glob.glob("/usr/local/cuda-*/bin/nvcc")):
+        add(p)
+    try:
+        import shutil
+        add(shutil.which("nvcc") or "")
+    except OSError:
+        pass
+
+    versions: list[str] = []
+    for nvcc in candidates:
+        try:
+            out = subprocess.check_output(
+                [nvcc, "--version"],
+                stderr=subprocess.STDOUT,
+                timeout=3,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+            continue
+        text = out.decode("utf-8", errors="replace")
+        m = re.search(r"release\s+([0-9.]+),", text)
+        if m and m.group(1) not in versions:
+            versions.append(m.group(1))
+    return versions
+
+
 def _cpu_info() -> tuple[int | None, str | None]:
     """(logical_cores, model_name) from /proc/cpuinfo.
 
@@ -1263,6 +1325,8 @@ def probe(
                 "cpu_freq_max_mhz": cpu_freq_max_mhz,
                 "cpu_power_watts": _cpu_power(rapl_start),
                 "cpu_power_max_watts": _rapl_max_power_watts(),
+                "driver_version": _driver_version(lib),
+                "cuda_versions": _cuda_versions(),
             },
             "elapsed_ms": round(elapsed, 1),
             "reserved_offsets": reserved_offsets if reserved_offsets else {},
