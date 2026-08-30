@@ -43,7 +43,9 @@ class ServerItem(Static, can_focus=True):
         self._ip: str = ""
         self._user: str = ""
         self._disks: list[DiskInfo] = []
-        self._disks_open: bool = False
+        # Remote machines start expanded (like in the screenshot);
+        # the local machine stays collapsed.
+        self._disks_open: bool = host != "local"
         self._cpu_desc: str = ""
 
     @property
