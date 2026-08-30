@@ -14,6 +14,9 @@ from textual.containers import Vertical
 from textual.message import Message
 from textual.widgets import Label, Static
 
+from ..models import DiskInfo
+from .gpu_bar import _LEVEL_COLORS, level_from_values
+
 
 class ServerItem(Static, can_focus=True):
     """A single server row with checkbox and label.
@@ -38,6 +41,7 @@ class ServerItem(Static, can_focus=True):
         self._status: str = ""
         self._ip: str = ""
         self._user: str = ""
+        self._disks: list[DiskInfo] = []
 
     @property
     def enabled(self) -> bool:
@@ -53,6 +57,13 @@ class ServerItem(Static, can_focus=True):
         self._ip = ip
         self._user = user
         self.refresh()
+
+    def set_disks(self, disks: list[DiskInfo]) -> None:
+        self._disks = disks
+        if self.has_focus:
+            self.refresh(layout=True)
+        else:
+            self.refresh()
 
     def toggle(self) -> None:
         """Toggle monitoring state."""
@@ -70,7 +81,36 @@ class ServerItem(Static, can_focus=True):
             summary += f"\n    [dim]{self._ip}[/]"
         if self._user:
             summary += f"\n    [dim]{self._user}[/]"
+        if self.has_focus and self._disks:
+            summary += self._render_disks()
         return head + summary
+
+    # ── disk usage (only while this row is focused/selected) -------
+
+    _BAR_WIDTH = 44
+
+    def _render_disks(self) -> str:
+        out = ""
+        for d in self._disks:
+            label = d.name + (f" ({d.kind})" if d.kind else "")
+            total_g = d.total_mb / 1024
+            used_g = d.used_mb / 1024
+            pct = d.percent
+            outer = int(round(pct / 100.0 * self._BAR_WIDTH))
+            outer = min(outer, self._BAR_WIDTH)
+            color = _LEVEL_COLORS[level_from_values(pct)]
+            bar = (
+                f"    [{color}]{'█' * outer}[/]"
+                f"[bright_black]{'░' * (self._BAR_WIDTH - outer)}[/]"
+            )
+            label_line = (
+                f"    [white]{label:<18}[/]"
+                f"[dim]{used_g:7.1f} GiB / {total_g:7.1f} GiB        [/]"
+                f"[green]{pct:3.0f}%[/]"
+            )
+            out += "\n" + label_line
+            out += "\n" + bar
+        return out
 
     def on_key(self, event: events.Key) -> None:
         """Space toggles the checkbox."""
@@ -96,7 +136,7 @@ class ServerSelector(Vertical):
     }
 
     ServerItem {
-        height: 3;
+        height: auto;
         padding: 0 1;
     }
     ServerItem:focus {
@@ -132,6 +172,12 @@ class ServerSelector(Vertical):
         item = self._items.get(host)
         if item is not None:
             item.set_ssh(ip, user)
+
+    def update_disks(self, host: str, disks: list) -> None:
+        """Update the disk usage list of a server item."""
+        item = self._items.get(host)
+        if item is not None:
+            item.set_disks(disks)
 
     def on_key(self, event: events.Key) -> None:
         """Arrow keys navigate between server items."""

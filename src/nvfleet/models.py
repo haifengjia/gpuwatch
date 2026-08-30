@@ -146,6 +146,39 @@ class GPUInfo:
 
 
 @dataclass
+class DiskInfo:
+    """One real block-device mount with usage."""
+
+    mount_point: str
+    used_mb: int
+    total_mb: int
+    kind: str | None = None  # 'hdd' | 'ssd' | None
+
+    @property
+    def name(self) -> str:
+        """Short display name: 'Root' for '/', basename capitalized else."""
+        if self.mount_point == "/":
+            return "Root"
+        base = self.mount_point.rstrip("/").rsplit("/", 1)[-1]
+        return base.capitalize() if base else self.mount_point
+
+    @property
+    def percent(self) -> float:
+        if self.total_mb <= 0:
+            return 0.0
+        return (self.used_mb / self.total_mb) * 100
+
+    @classmethod
+    def from_probe(cls, data: dict[str, Any]) -> DiskInfo:
+        return cls(
+            mount_point=data["mount_point"],
+            used_mb=data.get("used_mb", 0),
+            total_mb=data.get("total_mb", 0),
+            kind=data.get("kind"),
+        )
+
+
+@dataclass
 class HostMetrics:
     """Host-level (non-GPU) metrics: CPU, temperature, RAM, swap."""
 
@@ -161,6 +194,7 @@ class HostMetrics:
     temp_c: int | None = None
     driver_version: str | None = None
     cuda_versions: list[tuple[str, bool]] = field(default_factory=list)
+    disks: list[DiskInfo] = field(default_factory=list)
 
     @property
     def memory_percent(self) -> float | None:
@@ -188,6 +222,7 @@ class HostMetrics:
                 (str(v), bool(d))
                 for v, d in (data.get("cuda_versions") or [])
             ],
+            disks=[DiskInfo.from_probe(d) for d in (data.get("disks") or [])],
         )
 
 

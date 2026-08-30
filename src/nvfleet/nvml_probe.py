@@ -1080,6 +1080,64 @@ def _cuda_versions() -> list[tuple[str, bool]]:
     return sorted(versions.items(), key=lambda kv: sort_key(kv[0]))
 
 
+def _disks() -> list[dict[str, Any]]:
+    """Real block-device mounts with usage and rotational hint (hdd/ssd).
+
+    No sudo: /proc/mounts + shutil.disk_usage + /sys/block rotational.
+    Virtual filesystems (tmpfs, overlay, squashfs…) are skipped.
+    """
+    import re
+    import shutil
+
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    skip_fs = {"squashfs", "overlay", "tmpfs", "proc", "sysfs", "devtmpfs"}
+    try:
+        with open("/proc/mounts", "r") as f:
+            mounts = f.readlines()
+    except OSError:
+        return result
+
+    for line in mounts:
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        src, mp, fstype = parts[0], parts[1], parts[2]
+        if not src.startswith("/dev/"):
+            continue
+        if fstype in skip_fs or mp in seen or not mp.startswith("/"):
+            continue
+        seen.add(mp)
+        try:
+            usage = shutil.disk_usage(mp)
+        except OSError:
+            continue
+        if usage.total <= 0:
+            continue
+        dev_name = os.path.basename(src)
+        if "nvme" in dev_name:
+            dev = re.sub(r"p\d+$", "", dev_name)  # nvme0n1p2 -> nvme0n1
+        else:
+            dev = re.sub(r"\d+$", "", dev_name)  # sda1 -> sda
+        kind = None
+        try:
+            with open(f"/sys/block/{dev}/queue/rotational", "r") as f:
+                rot = f.read().strip()
+            kind = "hdd" if rot == "1" else ("ssd" if rot == "0" else None)
+        except (OSError, FileNotFoundError):
+            pass
+        result.append(
+            {
+                "mount_point": mp,
+                "used_mb": usage.used // (1024 * 1024),
+                "total_mb": usage.total // (1024 * 1024),
+                "kind": kind,
+            }
+        )
+    result.sort(key=lambda d: -d["total_mb"])
+    return result
+
+
 def _cpu_info() -> tuple[int | None, str | None]:
     """(logical_cores, model_name) from /proc/cpuinfo.
 
@@ -1354,6 +1412,7 @@ def probe(
                 "cpu_power_max_watts": _rapl_max_power_watts(),
                 "driver_version": _driver_version(lib),
                 "cuda_versions": _cuda_versions(),
+                "disks": _disks(),
             },
             "elapsed_ms": round(elapsed, 1),
             "reserved_offsets": reserved_offsets if reserved_offsets else {},

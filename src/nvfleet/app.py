@@ -118,6 +118,9 @@ class NVFleetApp(App):
             status = status_map.get(snapshot.status, snapshot.status)
             self._selector.update_status(host, status)
 
+            if snapshot.host_metrics is not None:
+                self._selector.update_disks(host, snapshot.host_metrics.disks)
+
     # ── server toggle handler (bubbles up from ServerItem) ───────────
 
     async def on_server_item_toggled(self, event: ServerItem.Toggled) -> None:
