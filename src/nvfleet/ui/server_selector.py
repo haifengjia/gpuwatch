@@ -92,10 +92,8 @@ class ServerItem(Static, can_focus=True):
         t.append(f" {self.server_label}", style=None)
         if self._status:
             t.append(f" {self._status}", style=None)
-        if self._ip:
-            t.append(f"\n    {self._ip}", style=Style(color="bright_black"))
-        if self._user:
-            t.append(f"\n    {self._user}", style=Style(color="bright_black"))
+        if self._ip or self._user:
+            t.append(f"\n    {self._user or '?'}@{self._ip or '?'}", style=Style(color="bright_black"))
         if self._disks_open and self._disks:
             t.append_text(self._disks_text())
         return t

@@ -18,7 +18,7 @@ from rich.text import Text
 from textual import events
 from textual.widgets import Static
 
-from ..models import GPUInfo, HostMetrics, ServerSnapshot
+from ..models import GPUInfo, HostMetrics, ServerSnapshot, gpu_short_name
 
 from .gpu_bar import (
     _LEVEL_COLORS,
@@ -206,7 +206,10 @@ class ServerPanel(Static):
         host_row = self._build_host_row(snap.host_metrics)
         if host_row is not None:
             wrapper.add_row(host_row)
-            wrapper.add_row(Text(""))
+        summary_row = self._build_gpu_summary(snap)
+        if summary_row is not None:
+            wrapper.add_row(summary_row)
+        wrapper.add_row(Text(""))
         wrapper.add_row(self._gpu_grid(snap))
 
         for gpu in snap.gpus:
@@ -248,7 +251,7 @@ class ServerPanel(Static):
         grid.add_column("mem", width=36, justify="left")
         grid.add_column("temp", width=9, justify="left")
         grid.add_column("power", width=11, justify="left")
-        grid.add_column("clock", width=13, justify="left")
+        grid.add_column("clock", width=15, justify="left")
         grid.add_column("enc", width=13, justify="left")
         grid.add_column("dec", width=13, justify="left")
 
@@ -336,6 +339,35 @@ class ServerPanel(Static):
                 f"{ou.user}: {ou.process_count} proc, {_format_mem(ou.total_memory_mb)}"
             )
         return Text(f"  GPU {gpu.index}  " + " | ".join(parts), style="dim")
+
+    def _build_gpu_summary(self, snap: ServerSnapshot) -> Table | None:
+        """Centered one-line GPU summary: cards, busy count, NV, CUDA."""
+        if not snap.gpus:
+            return None
+        from collections import Counter
+
+        parts: list[str] = []
+        cards = Counter(
+            gpu_short_name(g.name)
+            for g in snap.gpus
+            if g.name and g.name != "unknown"
+        )
+        for name, cnt in cards.items():
+            parts.append(f"{name} ×{cnt}" if cnt > 1 else name)
+        busy = sum(1 for g in snap.gpus if g.utilization_gpu > 0)
+        parts.append(f"{busy} busy")
+        hm = snap.host_metrics
+        if hm and hm.driver_version:
+            parts.append("NV" + hm.driver_version)
+        if hm and hm.cuda_versions:
+            parts.append("CUDA " + ", ".join(
+                f"{v}*" if d else v for v, d in hm.cuda_versions
+            ))
+
+        centered = Table(show_header=False, box=None, expand=True, padding=0)
+        centered.add_column("summary", justify="center")
+        centered.add_row(Text(" | ".join(parts), style="dim"))
+        return centered
 
     def _build_host_row(self, host: HostMetrics | None) -> Text | None:
         """One-line host summary above the GPU grid."""
