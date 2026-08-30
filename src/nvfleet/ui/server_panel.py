@@ -368,7 +368,7 @@ class ServerPanel(Static):
             line.append_text(mem_labeled_bar("SWAP", host.swap_used_mb, host.swap_total_mb, width=8))
         if host.driver_version:
             line.append(Text("   "))
-            line.append(Text(host.driver_version, style="dim"))
+            line.append(Text("NVDriver " + host.driver_version, style="dim"))
         if host.cuda_versions:
             line.append(Text("   "))
             line.append(Text("CUDA " + " ".join(host.cuda_versions), style="dim"))
