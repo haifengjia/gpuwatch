@@ -43,6 +43,7 @@ class ServerItem(Static, can_focus=True):
         self._ip: str = ""
         self._user: str = ""
         self._disks: list[DiskInfo] = []
+        self._disks_open: bool = False
 
     @property
     def enabled(self) -> bool:
@@ -90,11 +91,11 @@ class ServerItem(Static, can_focus=True):
             t.append(f"\n    {self._ip}", style=Style(color="bright_black"))
         if self._user:
             t.append(f"\n    {self._user}", style=Style(color="bright_black"))
-        if self.has_focus and self._disks:
+        if self._disks_open and self._disks:
             t.append_text(self._disks_text())
         return t
 
-    # ── disk usage (only while this row is focused/selected) -------
+    # ── disk usage (visible while this row is focused AND expanded) -------
 
     def _disks_text(self) -> Text:
         """Disk blocks sized to the actual sidebar width (no wrapping)."""
@@ -108,17 +109,21 @@ class ServerItem(Static, can_focus=True):
             used_g = d.used_mb / 1024
             pct = d.percent
             style = level_style(pct)
-            out.append(f"\n    {label}", style=style)
-            out.append(f"\n    {used_g:7.1f} GiB / {total_g:7.1f} GiB", style=style)
-            out.append(f"\n    {pct:3.0f}%", style=style)
+            out.append(f"\n    {label} {pct:3.0f}%", style=style)
+            out.append(f"\n    {used_g:.1f}G/{total_g:.1f}G", style=style)
             out.append("\n    ")
             out.append_text(_bar_text(pct, bar_w, style))
         return out
 
     def on_key(self, event: events.Key) -> None:
-        """Space toggles the checkbox."""
+        """Space toggles the checkbox; Enter expands/collapses disks."""
         if event.key == "space":
             self.toggle()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "enter":
+            self._disks_open = not self._disks_open
+            self.refresh(layout=True)
             event.prevent_default()
             event.stop()
 

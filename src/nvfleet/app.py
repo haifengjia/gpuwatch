@@ -33,7 +33,7 @@ class NVFleetApp(App):
     }
 
     ServerSelector {
-        width: 28;
+        width: 50;
         height: 1fr;
     }
 
