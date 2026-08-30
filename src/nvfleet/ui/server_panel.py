@@ -382,7 +382,17 @@ class ServerPanel(Static):
 
         line = Text()
         if host.cpu_percent is not None:
-            line.append_text(percent_labeled_bar("CPU", host.cpu_percent, width=6))
+            # CPU label color = worst-case tier among CPU% / temp / freq%.
+            sevs = []
+            sevs.append(level_from_values(host.cpu_percent))
+            if host.temp_c:
+                sevs.append(level_from_values(host.temp_c))
+            if host.cpu_freq_mhz and host.cpu_freq_max_mhz:
+                sevs.append(level_from_values(
+                    (host.cpu_freq_mhz / host.cpu_freq_max_mhz) * 100
+                ))
+            cpu_color = _LEVEL_COLORS[max(sevs)] if sevs else "blue"
+            line.append_text(percent_labeled_bar("CPU", host.cpu_percent, width=6, color=cpu_color))
         if host.temp_c is not None:
             line.append(Text("   "))
             line.append_text(temp_bar(host.temp_c, width=5))
