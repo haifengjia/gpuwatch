@@ -214,12 +214,10 @@ class ServerPanel(Static):
 
         for gpu in snap.gpus:
             if gpu.index in self._expanded:
-                wrapper.add_row(Text(""))
                 wrapper.add_row(self._build_proc_table(gpu))
             else:
                 summary = self._build_summary(gpu)
                 if summary is not None:
-                    wrapper.add_row(Text(""))
                     wrapper.add_row(summary)
 
         return wrapper
