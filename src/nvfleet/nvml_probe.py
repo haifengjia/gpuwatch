@@ -102,14 +102,10 @@ class NvmlProcessInfo(ctypes.Structure):
 
 class NvmlProcessInfoV3(ctypes.Structure):
     """Wider process info struct used by newer drivers (info streams include
-    GPU/MIG instance ids). Reading only the first two fields is safe."""
+    GPU/MIG instance ids). Reading only the first two fields is safe.
 
-    _fields_ = [
-        ("pid", ctypes.c_uint),
-        ("usedGpuMemory", ctypes.c_ulonglong),
-        ("gpuInstanceId", ctypes.c_uint),
-        ("computeInstanceId", ctypes.c_uint),
-    ]
+    NOTE: the count-first ABI variant reads a 16-byte stride (v1 layout)
+    on NVML 580+; arrays must be declared as NvmlProcessInfo, not this."""
 
 
 class NvmlProcessUtilizationSample(ctypes.Structure):
@@ -200,8 +196,8 @@ def _setup_nvml(lib) -> None:
     ]
     lib.nvmlDeviceGetPowerManagementLimit.restype = ctypes.c_int
 
-    # Compute / graphics running processes (count-first ABI on NVML 580+;
-    # buffer is sized for the widest struct variant we know of).
+    # Compute / graphics running processes. On NVML 580+ the count-first
+    # ABI writes CANNOT-stride entries with the 16-byte v1 layout.
     for func_name in (
         "nvmlDeviceGetComputeRunningProcesses",
         "nvmlDeviceGetGraphicsRunningProcesses",
@@ -211,7 +207,7 @@ def _setup_nvml(lib) -> None:
             func.argtypes = [
                 ctypes.c_void_p,
                 ctypes.POINTER(ctypes.c_uint),
-                ctypes.POINTER(NvmlProcessInfoV3),
+                ctypes.POINTER(NvmlProcessInfo),
             ]
             func.restype = ctypes.c_int
 
@@ -582,14 +578,15 @@ def _nvml_proc_list(
         rc = func(handle, ctypes.byref(count), None)
     except Exception:
         return [], -1
-    if rc == NVML_SUCCESS:
-        return [], rc  # no processes
-    if rc != nvml_error("INSUFFICIENT_SIZE", 4, 7):
+    # On NVML 580+, the first call fills *count even when it returns
+    # NVML_SUCCESS (count-first ABI). A SUCCESS with count>0 means
+    # processes exist and we must still fetch the array.
+    if rc != NVML_SUCCESS and rc != nvml_error("INSUFFICIENT_SIZE", 4, 7):
         return [], rc
     if count.value == 0:
         return [], rc
 
-    buf = (NvmlProcessInfoV3 * (count.value + 8))()
+    buf = (NvmlProcessInfo * (count.value + 8))()
     try:
         rc2 = func(handle, ctypes.byref(count), buf)
     except Exception:

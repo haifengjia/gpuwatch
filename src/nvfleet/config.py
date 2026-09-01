@@ -165,7 +165,7 @@ def discover_servers(yaml_path: str | None = None) -> list[ServerConfig]:
                     host=host,
                     label=entry.get("label", host),
                     enabled=entry.get("enabled", False),
-                    ssh_user=ssh_info.get("user") or getpass.getuser(),
+                    ssh_user=(entry.get("user") or ssh_info.get("user") or getpass.getuser()),
                     transport=entry.get("transport", "ssh"),
                     hostname=ssh_info.get("hostname") or entry.get("hostname"),
                 )

@@ -329,20 +329,16 @@ class ServerPanel(Static):
         return table
 
     def _build_summary(self, gpu: GPUInfo) -> str | None:
-        """One-line process summary for a collapsed GPU (no indent)."""
+        """One-line summary of the viewer's OWN processes (no indent).
+
+        Other users' processes never appear here — the expanded table
+        shows them dimmed instead.
+        """
         own = [p for p in gpu.processes if p.is_own]
-        other = gpu.other_users
-        if not own and not other:
+        if not own:
             return None
-        parts: list[str] = []
-        if own:
-            total = sum(p.gpu_memory_mb for p in own)
-            parts.append(f"{len(own)} own proc, {_format_mem(total)}")
-        for ou in other:
-            parts.append(
-                f"{ou.user}: {ou.process_count} proc, {_format_mem(ou.total_memory_mb)}"
-            )
-        return f"GPU {gpu.index} (" + " | ".join(parts) + ")"
+        total = sum(p.gpu_memory_mb for p in own)
+        return f"GPU {gpu.index} ({len(own)} own proc, {_format_mem(total)})"
 
     def _build_gpu_summary(self, snap: ServerSnapshot) -> str | None:
         """One-line GPU summary: cards, busy count, NV, CUDA (left aligned)."""
